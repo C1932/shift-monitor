@@ -32,6 +32,16 @@ jobs:
           NTFY_TOPIC: ${{ secrets.NTFY_TOPIC }}
         run: python shift_monitor.py
 
+      - name: Upload debug files (only exist if something went wrong)
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: debug-files
+          path: |
+            debug_screenshot.png
+            debug_page.html
+          if-no-files-found: ignore
+
       - name: Save state back to the repo
         run: |
           git config --global user.name "shift-monitor-bot"
