@@ -126,13 +126,25 @@ def login_to_website(driver):
         driver.get(WEBSITE_URL)
         time.sleep(2)
 
-    except Exception:
-        logger.info("Sign In button not found - assuming already logged in")
+    except Exception as e:
+        logger.warning(f"Login flow raised an exception (may already be logged in, or a selector is wrong): {e}")
+        driver.save_screenshot("debug_screenshot.png")
+        with open("debug_page.html", "w", encoding="utf-8") as f:
+            f.write(driver.page_source)
+        logger.warning("Saved debug_screenshot.png and debug_page.html for inspection")
 
-    WebDriverWait(driver, 10).until(
-        EC.presence_of_element_located((By.XPATH, "//button[contains(text(), 'List View')]"))
-    )
-    logger.info("On advertised shifts page, ready to proceed")
+    try:
+        WebDriverWait(driver, 10).until(
+            EC.presence_of_element_located((By.XPATH, "//button[contains(text(), 'List View')]"))
+        )
+        logger.info("On advertised shifts page, ready to proceed")
+    except Exception as e:
+        logger.error(f"Never reached the shifts list page: {e}")
+        driver.save_screenshot("debug_screenshot.png")
+        with open("debug_page.html", "w", encoding="utf-8") as f:
+            f.write(driver.page_source)
+        logger.error("Saved debug_screenshot.png and debug_page.html for inspection")
+        raise
 
 def click_list_view(driver):
     btn = driver.find_element(By.XPATH, "//button[contains(text(), 'List View')]")
