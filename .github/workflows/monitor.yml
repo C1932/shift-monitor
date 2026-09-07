@@ -36,6 +36,9 @@ jobs:
           GCAL_ICAL_URL: ${{ secrets.GCAL_ICAL_URL }}
           GH_DISPATCH_TOKEN: ${{ secrets.GH_DISPATCH_TOKEN }}
           GH_REPO: ${{ secrets.GH_REPO }}
+          EMAIL_FROM: ${{ secrets.EMAIL_FROM }}
+          EMAIL_APP_PASSWORD: ${{ secrets.EMAIL_APP_PASSWORD }}
+          EMAIL_TO: ${{ secrets.EMAIL_TO }}
         run: python shift_monitor.py
 
       - name: Upload debug files (only exist if something went wrong)
