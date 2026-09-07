@@ -11,6 +11,9 @@ import time
 import re
 import logging
 import requests
+import icalendar
+import recurring_ical_events
+from datetime import datetime
 from selenium import webdriver
 from selenium.webdriver.common.by import By
 from selenium.webdriver.support.ui import WebDriverWait
@@ -27,6 +30,9 @@ NTFY_TOPIC = os.environ["NTFY_TOPIC"]
 # Kill switch: set the AUTO_TAKE_SG secret to "false" to instantly disable
 # auto-taking without touching code. Defaults to on if not set.
 AUTO_TAKE_SG = os.environ.get("AUTO_TAKE_SG", "true").strip().lower() == "true"
+
+# Google Calendar conflict check (optional - only runs if GCAL_ICAL_URL is set)
+GCAL_ICAL_URL = os.environ.get("GCAL_ICAL_URL", "")
 
 # State file lives in the repo itself and gets committed back after each run
 STATE_FILE = "state.json"
@@ -115,7 +121,36 @@ def format_shift(shift):
 
 # ==================== NOTIFICATIONS ====================
 
-def send_ntfy(title, message):
+def get_calendar_events_for_date(shift_date_str):
+    """shift_date_str like 'Mon, Sep 7, 2026' -> fetch the calendar and return
+    a list of event names occurring that day. Returns None if not configured
+    or if something went wrong (so callers can skip the conflict line silently)."""
+    if not GCAL_ICAL_URL:
+        return None
+    try:
+        date_part = shift_date_str.split(",", 1)[1].strip()  # "Sep 7, 2026"
+        target_date = datetime.strptime(date_part, "%b %d, %Y").date()
+
+        response = requests.get(GCAL_ICAL_URL, timeout=15)
+        response.raise_for_status()
+        cal = icalendar.Calendar.from_ical(response.text)
+
+        start = datetime.combine(target_date, datetime.min.time())
+        end = datetime.combine(target_date, datetime.max.time())
+        events = recurring_ical_events.of(cal).between(start, end)
+
+        return [str(event.get("SUMMARY", "Untitled event")) for event in events]
+    except Exception as e:
+        logger.error(f"Error checking calendar for {shift_date_str}: {e}")
+        return None
+
+def format_conflict_line(shift_date_str):
+    events = get_calendar_events_for_date(shift_date_str)
+    if events is None:
+        return ""  # not configured, or the check failed - say nothing rather than guess
+    if events:
+        return "\n\nYour calendar already has:\n" + "\n".join(f"- {e}" for e in events)
+    return "\n\nNo conflicts on your calendar that day."
     try:
         url = f"https://ntfy.sh/{NTFY_TOPIC}"
         headers = {"Title": title, "Priority": "high"}
@@ -444,6 +479,7 @@ def run_check():
                     f"Date: {shift['date']}\n"
                     f"Hospital: {shift['hospital']}\n"
                     f"Provider: {shift['provider']}"
+                    f"{format_conflict_line(shift['date'])}"
                 )
                 send_ntfy(title, body)
 
