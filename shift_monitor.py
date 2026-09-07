@@ -173,18 +173,20 @@ def build_take_action_header(shift):
         }
     }
     body_json = json.dumps(payload)
-
-    def esc(s):
-        # ntfy's Actions header uses commas/semicolons as field separators,
-        # so any that appear inside a value must be escaped
-        return s.replace(",", "\\,").replace(";", "\\;")
+    # Guard against a literal apostrophe breaking out of the single-quoted
+    # header value below (none of our real data has one, but just in case)
+    body_json_safe = body_json.replace("'", "\\u0027")
 
     url = f"https://api.github.com/repos/{GH_REPO}/dispatches"
+    # ntfy's Actions header separates fields with commas, so any value that
+    # itself contains a comma (our JSON body does, e.g. "Mon, Sep 7, 2026")
+    # must be wrapped in quotes rather than escaped - this is what ntfy's
+    # own documentation examples do.
     return (
-        f"http, Take Shift, {esc(url)}, method=POST, "
+        f"http, Take Shift, {url}, method=POST, "
         f"headers.Authorization=Bearer {GH_DISPATCH_TOKEN}, "
         f"headers.Accept=application/vnd.github+json, "
-        f"body={esc(body_json)}, clear=true"
+        f"body='{body_json_safe}', clear=true"
     )
 
 def send_ntfy(title, message, actions_header=None):
@@ -197,7 +199,16 @@ def send_ntfy(title, message, actions_header=None):
         if response.status_code == 200:
             logger.info(f"Push notification sent to ntfy.sh/{NTFY_TOPIC}")
         else:
-            logger.error(f"ntfy.sh error: {response.status_code}")
+            logger.error(f"ntfy.sh error: {response.status_code} - {response.text}")
+            if actions_header:
+                logger.error(f"Actions header that was sent: {actions_header}")
+                logger.info("Retrying without the Actions header so the notification still gets through")
+                retry = requests.post(url, data=message.encode('utf-8'),
+                                       headers={"Title": title, "Priority": "high"})
+                if retry.status_code == 200:
+                    logger.info("Retry without Actions header succeeded")
+                else:
+                    logger.error(f"Retry also failed: {retry.status_code} - {retry.text}")
     except Exception as e:
         logger.error(f"Error sending push notification: {e}")
 
