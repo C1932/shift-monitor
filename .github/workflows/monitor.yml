@@ -32,6 +32,7 @@ jobs:
           PVMG_EMAIL: ${{ secrets.PVMG_EMAIL }}
           PVMG_PASSWORD: ${{ secrets.PVMG_PASSWORD }}
           NTFY_TOPIC: ${{ secrets.NTFY_TOPIC }}
+          AUTO_TAKE_SG: ${{ secrets.AUTO_TAKE_SG }}
         run: python shift_monitor.py
 
       - name: Upload debug files (only exist if something went wrong)
