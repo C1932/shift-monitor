@@ -231,6 +231,32 @@ def get_expected_page_count(driver):
         logger.warning(f"Could not read the site's own page-count indicator: {e}")
         return None
 
+def find_next_page_button(driver):
+    """Find the 'next page' arrow button by its position relative to the
+    'Page X of Y' text, rather than guessing its CSS class (which we don't
+    know and which the site doesn't label with visible text)."""
+    import re
+    candidates = driver.find_elements(By.XPATH, "//*[contains(., 'Page') and contains(., 'of')]")
+    candidates = sorted(candidates, key=lambda el: len(el.text))
+    target = None
+    for el in candidates:
+        if re.search(r"Page\s*\d+\s*of\s*\d+", el.text):
+            target = el
+            break
+    if target is None:
+        return None
+
+    container = target
+    for _ in range(5):
+        try:
+            container = container.find_element(By.XPATH, "..")
+        except Exception:
+            break
+        buttons = container.find_elements(By.TAG_NAME, "button")
+        if len(buttons) >= 2:
+            return buttons[-1]  # last button next to the page text = the right/next arrow
+    return None
+
 def navigate_pages(driver):
     all_shifts = []
     page_num = 1
@@ -243,10 +269,9 @@ def navigate_pages(driver):
         signature_before_next = get_table_signature(driver)
         all_shifts.extend(extract_shifts_from_table(driver))
 
-        try:
-            next_button = driver.find_element(By.XPATH, "//button[contains(@class, 'next')]")
-        except Exception as e:
-            logger.info(f"No 'next' button found (likely last page): {e}")
+        next_button = find_next_page_button(driver)
+        if next_button is None:
+            logger.info("No 'next' button found (likely last page)")
             break
 
         if not next_button.is_enabled():
