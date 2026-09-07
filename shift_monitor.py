@@ -34,6 +34,10 @@ AUTO_TAKE_SG = os.environ.get("AUTO_TAKE_SG", "true").strip().lower() == "true"
 # Google Calendar conflict check (optional - only runs if GCAL_ICAL_URL is set)
 GCAL_ICAL_URL = os.environ.get("GCAL_ICAL_URL", "")
 
+# Tap-to-take button (optional - only added to notifications if both are set)
+GH_DISPATCH_TOKEN = os.environ.get("GH_DISPATCH_TOKEN", "")
+GH_REPO = os.environ.get("GH_REPO", "")  # e.g. "yourusername/shift-monitor"
+
 # State file lives in the repo itself and gets committed back after each run
 STATE_FILE = "state.json"
 
@@ -151,9 +155,44 @@ def format_conflict_line(shift_date_str):
     if events:
         return "\n\nYour calendar already has:\n" + "\n".join(f"- {e}" for e in events)
     return "\n\nNo conflicts on your calendar that day."
+
+def build_take_action_header(shift):
+    """Build an ntfy 'Actions' header containing a button that, when tapped,
+    triggers a GitHub Actions run to take this specific shift. Returns None
+    if the required secrets aren't configured."""
+    if not GH_DISPATCH_TOKEN or not GH_REPO:
+        return None
+
+    payload = {
+        "event_type": "take_shift",
+        "client_payload": {
+            "date": shift["date"],
+            "hospital": shift["hospital"],
+            "shift_type": shift["shift_type"],
+            "provider": shift["provider"],
+        }
+    }
+    body_json = json.dumps(payload)
+
+    def esc(s):
+        # ntfy's Actions header uses commas/semicolons as field separators,
+        # so any that appear inside a value must be escaped
+        return s.replace(",", "\\,").replace(";", "\\;")
+
+    url = f"https://api.github.com/repos/{GH_REPO}/dispatches"
+    return (
+        f"http, Take Shift, {esc(url)}, method=POST, "
+        f"headers.Authorization=Bearer {GH_DISPATCH_TOKEN}, "
+        f"headers.Accept=application/vnd.github+json, "
+        f"body={esc(body_json)}, clear=true"
+    )
+
+def send_ntfy(title, message, actions_header=None):
     try:
         url = f"https://ntfy.sh/{NTFY_TOPIC}"
         headers = {"Title": title, "Priority": "high"}
+        if actions_header:
+            headers["Actions"] = actions_header
         response = requests.post(url, data=message.encode('utf-8'), headers=headers)
         if response.status_code == 200:
             logger.info(f"Push notification sent to ntfy.sh/{NTFY_TOPIC}")
@@ -384,13 +423,14 @@ def read_modal_shift_details(driver):
     }
 
 def attempt_auto_take(driver, shift):
-    """Re-locate a newly detected SG shift, click Take Shift, verify the
+    """Re-locate a newly detected shift, click Take Shift, verify the
     confirmation modal matches exactly, then Confirm or back out with Cancel.
-    Returns a status string describing what happened."""
-    logger.info(f"Attempting auto-take for SG shift: {shift}")
+    Returns a status string describing what happened. Safe to call whether
+    the driver is already logged in (mid-run) or completely fresh (a
+    standalone take-shift run triggered by a notification tap)."""
+    logger.info(f"Attempting auto-take for shift: {shift}")
     try:
-        driver.get(WEBSITE_URL)
-        time.sleep(2)
+        login_to_website(driver)
         click_list_view(driver)
 
         button = find_row_button_for_shift(driver, shift)
@@ -447,6 +487,23 @@ def attempt_auto_take(driver, shift):
 
 # ==================== MAIN (single run) ====================
 
+def build_result_notification(shift, result):
+    title = {
+        "taken": f"Taken - {shift['shift_type']}",
+        "unavailable": f"Not Available - {shift['shift_type']}",
+        "mismatch": f"Verification Failed - {shift['shift_type']}",
+        "not_found": f"Could Not Find Shift - {shift['shift_type']}",
+        "error": f"Error Taking Shift - {shift['shift_type']}",
+    }.get(result, f"Auto-Take Result - {shift['shift_type']}")
+    body = {
+        "taken": f"Successfully took the shift.\nDate: {shift['date']}\nHospital: {shift['hospital']}\nProvider: {shift['provider']}",
+        "unavailable": f"Shift was no longer available to take.\nDate: {shift['date']}\nHospital: {shift['hospital']}",
+        "mismatch": f"Found the shift but confirmation details didn't match - backed out without taking it. Check manually.\nDate: {shift['date']}\nHospital: {shift['hospital']}",
+        "not_found": f"Could not find this shift again - it may already be taken.\nDate: {shift['date']}\nHospital: {shift['hospital']}",
+        "error": f"An error occurred trying to take this shift. Check manually.\nDate: {shift['date']}\nHospital: {shift['hospital']}",
+    }.get(result, str(result))
+    return title, body
+
 def run_check():
     chrome_options = Options()
     chrome_options.add_argument("--headless=new")
@@ -481,7 +538,10 @@ def run_check():
                     f"Provider: {shift['provider']}"
                     f"{format_conflict_line(shift['date'])}"
                 )
-                send_ntfy(title, body)
+                # SG shifts are auto-taken separately below with no button needed.
+                # Everything else gets a tap-to-take button, if configured.
+                action_header = None if 'SG' in shift['shift_type'] else build_take_action_header(shift)
+                send_ntfy(title, body, actions_header=action_header)
 
             sg_new_shifts = [s for s in new_shifts if 'SG' in s['shift_type']]
             if sg_new_shifts and not AUTO_TAKE_SG:
@@ -489,20 +549,7 @@ def run_check():
             elif sg_new_shifts:
                 for shift in sg_new_shifts:
                     result = attempt_auto_take(driver, shift)
-                    result_title = {
-                        "taken": f"Taken - {shift['shift_type']}",
-                        "unavailable": f"Not Available - {shift['shift_type']}",
-                        "mismatch": f"Verification Failed - {shift['shift_type']}",
-                        "not_found": f"Could Not Find Shift - {shift['shift_type']}",
-                        "error": f"Error Taking Shift - {shift['shift_type']}",
-                    }.get(result, f"Auto-Take Result - {shift['shift_type']}")
-                    result_body = {
-                        "taken": f"Successfully took the shift.\nDate: {shift['date']}\nHospital: {shift['hospital']}\nProvider: {shift['provider']}",
-                        "unavailable": f"Shift was no longer available to take.\nDate: {shift['date']}\nHospital: {shift['hospital']}",
-                        "mismatch": f"Found the shift but confirmation details didn't match - backed out without taking it. Check manually.\nDate: {shift['date']}\nHospital: {shift['hospital']}",
-                        "not_found": f"Could not find this shift again - it may already be taken.\nDate: {shift['date']}\nHospital: {shift['hospital']}",
-                        "error": f"An error occurred trying to take this shift. Check manually.\nDate: {shift['date']}\nHospital: {shift['hospital']}",
-                    }.get(result, str(result))
+                    result_title, result_body = build_result_notification(shift, result)
                     send_ntfy(result_title, result_body)
         else:
             logger.info("No new shifts detected")
@@ -513,9 +560,40 @@ def run_check():
     finally:
         driver.quit()
 
+def run_take_single_shift():
+    """Standalone mode: take exactly one specific shift, identified by the
+    TAKE_SHIFT_* environment variables set by the button-tap workflow.
+    Does not scan the site or touch state.json at all."""
+    shift = {
+        "date": os.environ.get("TAKE_SHIFT_DATE", ""),
+        "hospital": os.environ.get("TAKE_SHIFT_HOSPITAL", ""),
+        "shift_type": os.environ.get("TAKE_SHIFT_TYPE", ""),
+        "provider": os.environ.get("TAKE_SHIFT_PROVIDER", ""),
+    }
+    logger.info(f"Take-single-shift mode triggered for: {shift}")
+
+    chrome_options = Options()
+    chrome_options.add_argument("--headless=new")
+    chrome_options.add_argument("--no-sandbox")
+    chrome_options.add_argument("--disable-dev-shm-usage")
+    chrome_options.add_argument("--disable-blink-features=AutomationControlled")
+
+    driver = webdriver.Chrome(options=chrome_options)
+    driver.set_page_load_timeout(30)
+    try:
+        result = attempt_auto_take(driver, shift)
+    finally:
+        driver.quit()
+
+    title, body = build_result_notification(shift, result)
+    send_ntfy(title, body)
+
 if __name__ == "__main__":
     try:
-        run_check()
+        if os.environ.get("TAKE_SHIFT_DATE"):
+            run_take_single_shift()
+        else:
+            run_check()
     except Exception as e:
         error_msg = f"The shift monitor crashed and stopped early: {e}"
         logger.error(error_msg)
