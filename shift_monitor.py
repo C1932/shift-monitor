@@ -11,8 +11,6 @@ import time
 import re
 import logging
 import requests
-import smtplib
-from email.mime.text import MIMEText
 from selenium import webdriver
 from selenium.webdriver.common.by import By
 from selenium.webdriver.support.ui import WebDriverWait
@@ -29,11 +27,6 @@ NTFY_TOPIC = os.environ["NTFY_TOPIC"]
 # Kill switch: set the AUTO_TAKE_SG secret to "false" to instantly disable
 # auto-taking without touching code. Defaults to on if not set.
 AUTO_TAKE_SG = os.environ.get("AUTO_TAKE_SG", "true").strip().lower() == "true"
-
-# Email (optional - only sends if EMAIL_FROM and EMAIL_APP_PASSWORD are set)
-EMAIL_FROM = os.environ.get("EMAIL_FROM", "")
-EMAIL_APP_PASSWORD = os.environ.get("EMAIL_APP_PASSWORD", "")
-EMAIL_TO = os.environ.get("EMAIL_TO", "ch0buying@gmail.com")
 
 # State file lives in the repo itself and gets committed back after each run
 STATE_FILE = "state.json"
@@ -133,27 +126,6 @@ def send_ntfy(title, message):
             logger.error(f"ntfy.sh error: {response.status_code}")
     except Exception as e:
         logger.error(f"Error sending push notification: {e}")
-
-def send_email(subject, body):
-    if not EMAIL_FROM or not EMAIL_APP_PASSWORD:
-        logger.warning("Email not configured (missing EMAIL_FROM or EMAIL_APP_PASSWORD) - skipping")
-        return
-    try:
-        msg = MIMEText(body)
-        msg["Subject"] = subject
-        msg["From"] = EMAIL_FROM
-        msg["To"] = EMAIL_TO
-        with smtplib.SMTP_SSL("smtp.gmail.com", 465) as server:
-            server.login(EMAIL_FROM, EMAIL_APP_PASSWORD)
-            server.sendmail(EMAIL_FROM, [EMAIL_TO], msg.as_string())
-        logger.info(f"Email sent to {EMAIL_TO}")
-    except Exception as e:
-        logger.error(f"Error sending email: {e}")
-
-def notify(title, body):
-    """Send a notification through every configured channel."""
-    send_ntfy(title, body)
-    send_email(title, body)
 
 # ==================== WEB SCRAPING ====================
 
@@ -326,7 +298,7 @@ def navigate_pages(driver):
             f"but only {page_num} were scanned - some shifts may have been missed!"
         )
         logger.error(f"MISMATCH: {error_msg}")
-        notify("Shift Monitor Error", error_msg)
+        send_ntfy("Shift Monitor Error", error_msg)
     return all_shifts
 
 # ==================== AUTO-TAKE (SG shifts only) ====================
@@ -473,7 +445,7 @@ def run_check():
                     f"Hospital: {shift['hospital']}\n"
                     f"Provider: {shift['provider']}"
                 )
-                notify(title, body)
+                send_ntfy(title, body)
 
             sg_new_shifts = [s for s in new_shifts if 'SG' in s['shift_type']]
             if sg_new_shifts and not AUTO_TAKE_SG:
@@ -495,7 +467,7 @@ def run_check():
                         "not_found": f"Could not find this shift again - it may already be taken.\nDate: {shift['date']}\nHospital: {shift['hospital']}",
                         "error": f"An error occurred trying to take this shift. Check manually.\nDate: {shift['date']}\nHospital: {shift['hospital']}",
                     }.get(result, str(result))
-                    notify(result_title, result_body)
+                    send_ntfy(result_title, result_body)
         else:
             logger.info("No new shifts detected")
 
@@ -512,7 +484,7 @@ if __name__ == "__main__":
         error_msg = f"The shift monitor crashed and stopped early: {e}"
         logger.error(error_msg)
         try:
-            notify("Shift Monitor Error", error_msg)
+            send_ntfy("Shift Monitor Error", error_msg)
         except Exception:
             pass  # don't let a failed notification hide the original error
         raise  # still mark this run as failed in GitHub, so the Actions log shows it too
