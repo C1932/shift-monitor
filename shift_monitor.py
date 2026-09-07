@@ -33,6 +33,16 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
+def safe_click(driver, element):
+    """Scroll element into view, then click it. Falls back to a JS click
+    if a normal click is blocked by an overlapping element (icon, header, etc.)."""
+    driver.execute_script("arguments[0].scrollIntoView({block: 'center'});", element)
+    time.sleep(0.3)
+    try:
+        element.click()
+    except Exception:
+        driver.execute_script("arguments[0].click();", element)
+
 # ==================== FILTER LOGIC ====================
 
 def is_weekday(date_string):
@@ -105,7 +115,7 @@ def login_to_website(driver):
             EC.element_to_be_clickable((By.XPATH, "//button[contains(text(), 'Sign In to Calendar')]"))
         )
         logger.info("Sign In button found - logging in")
-        sign_in_button.click()
+        safe_click(driver, sign_in_button)
 
         # Clicking navigates to a separate /#/login page
         email_field = WebDriverWait(driver, 10).until(
@@ -117,7 +127,7 @@ def login_to_website(driver):
         password_field.send_keys(LOGIN_PASSWORD)
 
         submit_button = driver.find_element(By.XPATH, "//button[normalize-space(.)='Sign In']")
-        submit_button.click()
+        safe_click(driver, submit_button)
         logger.info("Submitted login form")
 
         time.sleep(3)
@@ -147,7 +157,7 @@ def login_to_website(driver):
 
 def click_list_view(driver):
     btn = driver.find_element(By.XPATH, "//button[contains(text(), 'List View')]")
-    btn.click()
+    safe_click(driver, btn)
     time.sleep(2)
     logger.info("Clicked List View")
 
@@ -189,7 +199,7 @@ def navigate_pages(driver):
         try:
             next_button = driver.find_element(By.XPATH, "//button[contains(@class, 'next')]")
             if next_button.is_enabled():
-                next_button.click()
+                safe_click(driver, next_button)
                 time.sleep(2)
                 page_num += 1
             else:
