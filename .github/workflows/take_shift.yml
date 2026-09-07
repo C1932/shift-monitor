@@ -30,4 +30,7 @@ jobs:
           TAKE_SHIFT_HOSPITAL: ${{ github.event.client_payload.hospital }}
           TAKE_SHIFT_TYPE: ${{ github.event.client_payload.shift_type }}
           TAKE_SHIFT_PROVIDER: ${{ github.event.client_payload.provider }}
+          EMAIL_FROM: ${{ secrets.EMAIL_FROM }}
+          EMAIL_APP_PASSWORD: ${{ secrets.EMAIL_APP_PASSWORD }}
+          EMAIL_TO: ${{ secrets.EMAIL_TO }}
         run: python shift_monitor.py
