@@ -1,1 +1,20 @@
-   []
+[
+  {
+    "date": "Fri, Sep 4, 2026",
+    "hospital": "Huntington Hospital",
+    "shift_type": "Third",
+    "provider": "Hernandez"
+  },
+  {
+    "date": "Fri, Sep 11, 2026",
+    "hospital": "Huntington Hospital",
+    "shift_type": "Third",
+    "provider": "Perera"
+  },
+  {
+    "date": "Fri, Sep 18, 2026",
+    "hospital": "Valley Presbyterian",
+    "shift_type": "VP1",
+    "provider": "Tsai, A"
+  }
+]
