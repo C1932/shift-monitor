@@ -33,6 +33,7 @@ jobs:
           PVMG_PASSWORD: ${{ secrets.PVMG_PASSWORD }}
           NTFY_TOPIC: ${{ secrets.NTFY_TOPIC }}
           AUTO_TAKE_SG: ${{ secrets.AUTO_TAKE_SG }}
+          GCAL_ICAL_URL: ${{ secrets.GCAL_ICAL_URL }}
         run: python shift_monitor.py
 
       - name: Upload debug files (only exist if something went wrong)
