@@ -13,6 +13,8 @@ import logging
 import requests
 import icalendar
 import recurring_ical_events
+import smtplib
+from email.mime.text import MIMEText
 from datetime import datetime
 from selenium import webdriver
 from selenium.webdriver.common.by import By
@@ -33,6 +35,11 @@ AUTO_TAKE_SG = os.environ.get("AUTO_TAKE_SG", "true").strip().lower() == "true"
 
 # Google Calendar conflict check (optional - only runs if GCAL_ICAL_URL is set)
 GCAL_ICAL_URL = os.environ.get("GCAL_ICAL_URL", "")
+
+# Email (optional - only sends if EMAIL_FROM and EMAIL_APP_PASSWORD are set)
+EMAIL_FROM = os.environ.get("EMAIL_FROM", "")
+EMAIL_APP_PASSWORD = os.environ.get("EMAIL_APP_PASSWORD", "")
+EMAIL_TO = os.environ.get("EMAIL_TO", "")
 
 # Tap-to-take button (optional - only added to notifications if both are set)
 GH_DISPATCH_TOKEN = os.environ.get("GH_DISPATCH_TOKEN", "")
@@ -212,6 +219,28 @@ def send_ntfy(title, message, actions_header=None):
     except Exception as e:
         logger.error(f"Error sending push notification: {e}")
 
+def send_email(subject, body):
+    if not EMAIL_FROM or not EMAIL_APP_PASSWORD or not EMAIL_TO:
+        logger.warning("Email not configured (missing EMAIL_FROM, EMAIL_APP_PASSWORD, or EMAIL_TO) - skipping")
+        return
+    try:
+        msg = MIMEText(body)
+        msg["Subject"] = subject
+        msg["From"] = EMAIL_FROM
+        msg["To"] = EMAIL_TO
+        with smtplib.SMTP_SSL("smtp.gmail.com", 465) as server:
+            server.login(EMAIL_FROM, EMAIL_APP_PASSWORD)
+            server.sendmail(EMAIL_FROM, [EMAIL_TO], msg.as_string())
+        logger.info(f"Email sent to {EMAIL_TO}")
+    except Exception as e:
+        logger.error(f"Error sending email: {e}")
+
+def notify(title, body, actions_header=None):
+    """Send a notification through every configured channel. actions_header
+    (the tap-to-take button) only applies to ntfy - email has no such concept."""
+    send_ntfy(title, body, actions_header=actions_header)
+    send_email(title, body)
+
 # ==================== WEB SCRAPING ====================
 
 def login_to_website(driver):
@@ -383,7 +412,7 @@ def navigate_pages(driver):
             f"but only {page_num} were scanned - some shifts may have been missed!"
         )
         logger.error(f"MISMATCH: {error_msg}")
-        send_ntfy("Shift Monitor Error", error_msg)
+        notify("Shift Monitor Error", error_msg)
     return all_shifts
 
 # ==================== AUTO-TAKE (SG shifts only) ====================
@@ -552,7 +581,7 @@ def run_check():
                 # SG shifts are auto-taken separately below with no button needed.
                 # Everything else gets a tap-to-take button, if configured.
                 action_header = None if 'SG' in shift['shift_type'] else build_take_action_header(shift)
-                send_ntfy(title, body, actions_header=action_header)
+                notify(title, body, actions_header=action_header)
 
             sg_new_shifts = [s for s in new_shifts if 'SG' in s['shift_type']]
             if sg_new_shifts and not AUTO_TAKE_SG:
@@ -561,7 +590,7 @@ def run_check():
                 for shift in sg_new_shifts:
                     result = attempt_auto_take(driver, shift)
                     result_title, result_body = build_result_notification(shift, result)
-                    send_ntfy(result_title, result_body)
+                    notify(result_title, result_body)
         else:
             logger.info("No new shifts detected")
 
@@ -597,7 +626,7 @@ def run_take_single_shift():
         driver.quit()
 
     title, body = build_result_notification(shift, result)
-    send_ntfy(title, body)
+    notify(title, body)
 
 if __name__ == "__main__":
     try:
@@ -609,7 +638,7 @@ if __name__ == "__main__":
         error_msg = f"The shift monitor crashed and stopped early: {e}"
         logger.error(error_msg)
         try:
-            send_ntfy("Shift Monitor Error", error_msg)
+            notify("Shift Monitor Error", error_msg)
         except Exception:
             pass  # don't let a failed notification hide the original error
         raise  # still mark this run as failed in GitHub, so the Actions log shows it too
