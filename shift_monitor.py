@@ -213,13 +213,22 @@ def extract_shifts_from_table(driver):
 
 def get_expected_page_count(driver):
     """Read the site's own 'Page X of Y' text so we can verify we didn't stop early."""
+    import re
     try:
-        el = driver.find_element(By.XPATH, "//*[contains(text(), 'Page') and contains(text(), 'of')]")
-        text = el.text.strip()  # e.g. "Page 1 of 2"
-        parts = text.replace("Page", "").split("of")
-        return int(parts[1].strip())
-    except Exception:
-        logger.warning("Could not read the site's own page-count indicator")
+        candidates = driver.find_elements(
+            By.XPATH, "//*[contains(., 'Page') and contains(., 'of')]"
+        )
+        # Prefer the most specific (shortest text) match, since a broad match
+        # could otherwise grab a large parent container instead of the label itself
+        candidates = sorted(candidates, key=lambda el: len(el.text))
+        for el in candidates:
+            match = re.search(r"Page\s*(\d+)\s*of\s*(\d+)", el.text)
+            if match:
+                return int(match.group(2))
+        logger.warning(f"Found {len(candidates)} candidate element(s) but none matched 'Page X of Y' pattern")
+        return None
+    except Exception as e:
+        logger.warning(f"Could not read the site's own page-count indicator: {e}")
         return None
 
 def navigate_pages(driver):
@@ -236,18 +245,21 @@ def navigate_pages(driver):
 
         try:
             next_button = driver.find_element(By.XPATH, "//button[contains(@class, 'next')]")
-            if next_button.is_enabled():
-                safe_click(driver, next_button)
-                changed = wait_for_table_change(driver, signature_before_next, timeout=10)
-                if not changed:
-                    logger.warning("Table did not visibly change after clicking next - "
-                                   "may be reading stale data, stopping pagination here")
-                    break
-                page_num += 1
-            else:
-                break
-        except Exception:
+        except Exception as e:
+            logger.info(f"No 'next' button found (likely last page): {e}")
             break
+
+        if not next_button.is_enabled():
+            logger.info("Next button found but disabled - this is the last page")
+            break
+
+        safe_click(driver, next_button)
+        changed = wait_for_table_change(driver, signature_before_next, timeout=10)
+        if not changed:
+            logger.warning("Table did not visibly change after clicking next - "
+                           "may be reading stale data, stopping pagination here")
+            break
+        page_num += 1
 
     logger.info(f"Total pages scanned: {page_num}")
     if expected_total_pages and page_num != expected_total_pages:
