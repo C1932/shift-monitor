@@ -1,0 +1,60 @@
+name: PVMG Shift Monitor
+
+on:
+  schedule:
+    # Runs at :07 and :37 past every hour, all day, every day.
+    # Deliberately NOT on the exact hour/half-hour (:00 / :30) - GitHub documents
+    # that those exact times get the most congestion across all repos and can
+    # cause scheduled runs to be delayed significantly, sometimes hours.
+    - cron: '7,37 * * * *'
+  workflow_dispatch:
+    # Lets you manually click "Run workflow" in GitHub to test it immediately
+
+permissions:
+  contents: write
+
+jobs:
+  check-shifts:
+    runs-on: ubuntu-latest
+    env:
+      TZ: America/Los_Angeles
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Run shift monitor
+        env:
+          PVMG_EMAIL: ${{ secrets.PVMG_EMAIL }}
+          PVMG_PASSWORD: ${{ secrets.PVMG_PASSWORD }}
+          NTFY_TOPIC: ${{ secrets.NTFY_TOPIC }}
+          AUTO_TAKE_SG: ${{ secrets.AUTO_TAKE_SG }}
+          GCAL_ICAL_URL: ${{ secrets.GCAL_ICAL_URL }}
+          GH_DISPATCH_TOKEN: ${{ secrets.GH_DISPATCH_TOKEN }}
+          GH_REPO: ${{ secrets.GH_REPO }}
+        run: python shift_monitor.py
+
+      - name: Upload debug files (only exist if something went wrong)
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: debug-files
+          path: |
+            debug_screenshot.png
+            debug_page.html
+          if-no-files-found: ignore
+
+      - name: Save state back to the repo
+        run: |
+          git config --global user.name "shift-monitor-bot"
+          git config --global user.email "actions@users.noreply.github.com"
+          git add state.json
+          git diff --quiet --cached || git commit -m "Update shift state [skip ci]"
+          git push
