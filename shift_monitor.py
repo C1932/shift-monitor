@@ -267,7 +267,7 @@ def run_check():
         if new_shifts:
             logger.info(f"Found {len(new_shifts)} NEW shifts - sending alerts")
             for shift in new_shifts:
-                title = f"NEW {shift['shift_type']} SHIFT"
+                title = f"Alert - {shift['shift_type']}"
                 body = (
                     f"Date: {shift['date']}\n"
                     f"Hospital: {shift['hospital']}\n"
