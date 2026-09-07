@@ -1,2 +1,4 @@
 selenium==4.15.2
 requests==2.31.0
+icalendar==5.0.13
+recurring-ical-events==2.1.3
