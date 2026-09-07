@@ -43,6 +43,26 @@ def safe_click(driver, element):
     except Exception:
         driver.execute_script("arguments[0].click();", element)
 
+def get_table_signature(driver):
+    """A snapshot of the table's current visible content, used to detect
+    when a page change has actually finished rendering (not just been clicked)."""
+    try:
+        rows = driver.find_elements(By.XPATH, "//table//tbody//tr")
+        return "|".join(row.text for row in rows)
+    except Exception:
+        return None
+
+def wait_for_table_change(driver, previous_signature, timeout=10):
+    """Poll until the table's content differs from the given previous snapshot,
+    or until timeout. Returns True if a change was detected."""
+    start = time.time()
+    while time.time() - start < timeout:
+        current = get_table_signature(driver)
+        if current is not None and current != previous_signature and current != "":
+            return True
+        time.sleep(0.3)
+    return False
+
 # ==================== FILTER LOGIC ====================
 
 def is_weekday(date_string):
@@ -158,8 +178,11 @@ def login_to_website(driver):
 def click_list_view(driver):
     btn = driver.find_element(By.XPATH, "//button[contains(text(), 'List View')]")
     safe_click(driver, btn)
-    time.sleep(2)
-    logger.info("Clicked List View")
+    WebDriverWait(driver, 15).until(
+        EC.presence_of_element_located((By.XPATH, "//table//tbody//tr"))
+    )
+    time.sleep(1)  # let the last row or two settle in
+    logger.info("Clicked List View, table has loaded")
 
 def extract_shifts_from_table(driver):
     shifts = []
@@ -194,13 +217,18 @@ def navigate_pages(driver):
 
     while True:
         logger.info(f"Scanning page {page_num}...")
+        signature_before_next = get_table_signature(driver)
         all_shifts.extend(extract_shifts_from_table(driver))
 
         try:
             next_button = driver.find_element(By.XPATH, "//button[contains(@class, 'next')]")
             if next_button.is_enabled():
                 safe_click(driver, next_button)
-                time.sleep(2)
+                changed = wait_for_table_change(driver, signature_before_next, timeout=10)
+                if not changed:
+                    logger.warning("Table did not visibly change after clicking next - "
+                                   "may be reading stale data, stopping pagination here")
+                    break
                 page_num += 1
             else:
                 break
