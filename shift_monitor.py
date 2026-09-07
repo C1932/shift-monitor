@@ -102,22 +102,21 @@ def login_to_website(driver):
 
     try:
         sign_in_button = WebDriverWait(driver, 5).until(
-            EC.element_to_be_clickable((By.XPATH, "//button[contains(text(), 'Sign In to Your Calendar')]"))
+            EC.element_to_be_clickable((By.XPATH, "//button[contains(text(), 'Sign In to Calendar')]"))
         )
         logger.info("Sign In button found - logging in")
         sign_in_button.click()
 
+        # Clicking navigates to a separate /#/login page
         email_field = WebDriverWait(driver, 10).until(
-            EC.presence_of_element_located((By.NAME, "email"))
+            EC.presence_of_element_located((By.XPATH, "//input[@placeholder='you@example.com']"))
         )
         email_field.send_keys(LOGIN_EMAIL)
 
-        password_field = WebDriverWait(driver, 10).until(
-            EC.presence_of_element_located((By.NAME, "password"))
-        )
+        password_field = driver.find_element(By.XPATH, "//input[@placeholder='Enter your password']")
         password_field.send_keys(LOGIN_PASSWORD)
 
-        submit_button = driver.find_element(By.XPATH, "//button[contains(text(), 'Sign In')]")
+        submit_button = driver.find_element(By.XPATH, "//button[normalize-space(text())='Sign In']")
         submit_button.click()
         logger.info("Submitted login form")
 
