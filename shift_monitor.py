@@ -116,7 +116,7 @@ def login_to_website(driver):
         password_field = driver.find_element(By.XPATH, "//input[@placeholder='Enter your password']")
         password_field.send_keys(LOGIN_PASSWORD)
 
-        submit_button = driver.find_element(By.XPATH, "//button[normalize-space(text())='Sign In']")
+        submit_button = driver.find_element(By.XPATH, "//button[normalize-space(.)='Sign In']")
         submit_button.click()
         logger.info("Submitted login form")
 
