@@ -1,0 +1,33 @@
+name: Take Single Shift (triggered by notification tap)
+
+on:
+  repository_dispatch:
+    types: [take_shift]
+
+jobs:
+  take-shift:
+    runs-on: ubuntu-latest
+    env:
+      TZ: America/Los_Angeles
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Take the shift
+        env:
+          PVMG_EMAIL: ${{ secrets.PVMG_EMAIL }}
+          PVMG_PASSWORD: ${{ secrets.PVMG_PASSWORD }}
+          NTFY_TOPIC: ${{ secrets.NTFY_TOPIC }}
+          TAKE_SHIFT_DATE: ${{ github.event.client_payload.date }}
+          TAKE_SHIFT_HOSPITAL: ${{ github.event.client_payload.hospital }}
+          TAKE_SHIFT_TYPE: ${{ github.event.client_payload.shift_type }}
+          TAKE_SHIFT_PROVIDER: ${{ github.event.client_payload.provider }}
+        run: python shift_monitor.py
