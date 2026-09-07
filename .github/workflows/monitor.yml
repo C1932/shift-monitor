@@ -1,14 +1,11 @@
 name: PVMG Shift Monitor
 
 on:
-  schedule:
-    # Runs at :07 and :37 past every hour, all day, every day.
-    # Deliberately NOT on the exact hour/half-hour (:00 / :30) - GitHub documents
-    # that those exact times get the most congestion across all repos and can
-    # cause scheduled runs to be delayed significantly, sometimes hours.
-    - cron: '7,37 * * * *'
   workflow_dispatch:
-    # Lets you manually click "Run workflow" in GitHub to test it immediately
+    # Triggered every 30 minutes by an external cron service (cron-job.org),
+    # since GitHub's own built-in schedule trigger proved unreliable for
+    # this account - see the long troubleshooting history for details.
+    # Can still be run manually from the Actions tab for testing too.
 
 permissions:
   contents: write
