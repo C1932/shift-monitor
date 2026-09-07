@@ -211,9 +211,23 @@ def extract_shifts_from_table(driver):
 
     return shifts
 
+def get_expected_page_count(driver):
+    """Read the site's own 'Page X of Y' text so we can verify we didn't stop early."""
+    try:
+        el = driver.find_element(By.XPATH, "//*[contains(text(), 'Page') and contains(text(), 'of')]")
+        text = el.text.strip()  # e.g. "Page 1 of 2"
+        parts = text.replace("Page", "").split("of")
+        return int(parts[1].strip())
+    except Exception:
+        logger.warning("Could not read the site's own page-count indicator")
+        return None
+
 def navigate_pages(driver):
     all_shifts = []
     page_num = 1
+    expected_total_pages = get_expected_page_count(driver)
+    if expected_total_pages:
+        logger.info(f"Site reports {expected_total_pages} total page(s)")
 
     while True:
         logger.info(f"Scanning page {page_num}...")
@@ -236,6 +250,13 @@ def navigate_pages(driver):
             break
 
     logger.info(f"Total pages scanned: {page_num}")
+    if expected_total_pages and page_num != expected_total_pages:
+        error_msg = (
+            f"Site says {expected_total_pages} page(s) exist, "
+            f"but only {page_num} were scanned - some shifts may have been missed!"
+        )
+        logger.error(f"MISMATCH: {error_msg}")
+        send_ntfy("Shift Monitor Error", error_msg)
     return all_shifts
 
 # ==================== MAIN (single run) ====================
@@ -284,4 +305,13 @@ def run_check():
         driver.quit()
 
 if __name__ == "__main__":
-    run_check()
+    try:
+        run_check()
+    except Exception as e:
+        error_msg = f"The shift monitor crashed and stopped early: {e}"
+        logger.error(error_msg)
+        try:
+            send_ntfy("Shift Monitor Error", error_msg)
+        except Exception:
+            pass  # don't let a failed notification hide the original error
+        raise  # still mark this run as failed in GitHub, so the Actions log shows it too
