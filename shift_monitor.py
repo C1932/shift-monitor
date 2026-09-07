@@ -8,6 +8,7 @@ Each run: logs in, scans all shift pages, alerts on NEW matching shifts via ntfy
 import os
 import json
 import time
+import re
 import logging
 import requests
 from selenium import webdriver
@@ -22,6 +23,10 @@ WEBSITE_URL = "https://pvmg-schedule.com/#/management/advertised-shifts"
 LOGIN_EMAIL = os.environ["PVMG_EMAIL"]
 LOGIN_PASSWORD = os.environ["PVMG_PASSWORD"]
 NTFY_TOPIC = os.environ["NTFY_TOPIC"]
+
+# Kill switch: set the AUTO_TAKE_SG secret to "false" to instantly disable
+# auto-taking without touching code. Defaults to on if not set.
+AUTO_TAKE_SG = os.environ.get("AUTO_TAKE_SG", "true").strip().lower() == "true"
 
 # State file lives in the repo itself and gets committed back after each run
 STATE_FILE = "state.json"
@@ -296,6 +301,115 @@ def navigate_pages(driver):
         send_ntfy("Shift Monitor Error", error_msg)
     return all_shifts
 
+# ==================== AUTO-TAKE (SG shifts only) ====================
+
+def find_row_button_for_shift(driver, shift, max_pages=10):
+    """Search all pages for a row matching this shift's exact date/hospital/
+    shift_type/provider, and return its action button, or None if not found
+    (e.g. someone else already took it)."""
+    for _ in range(max_pages):
+        rows = driver.find_elements(By.XPATH, "//table//tbody//tr")
+        for row in rows:
+            try:
+                cells = row.find_elements(By.TAG_NAME, "td")
+                if len(cells) >= 4:
+                    if (cells[0].text.strip() == shift['date'] and
+                            cells[1].text.strip() == shift['hospital'] and
+                            cells[2].text.strip() == shift['shift_type'] and
+                            cells[3].text.strip() == shift['provider']):
+                        buttons = row.find_elements(By.TAG_NAME, "button")
+                        if buttons:
+                            return buttons[0]
+            except Exception:
+                continue
+
+        next_button = find_next_page_button(driver)
+        if next_button is None or not next_button.is_enabled():
+            break
+        signature_before = get_table_signature(driver)
+        safe_click(driver, next_button)
+        wait_for_table_change(driver, signature_before, timeout=10)
+
+    return None
+
+def read_modal_shift_details(driver):
+    """Read the Date/Hospital/Shift Type/Current Provider fields out of the
+    'Confirm Take Shift' modal, so we can verify before confirming."""
+    full_text = driver.find_element(By.TAG_NAME, "body").text
+
+    def extract(label):
+        match = re.search(rf"{re.escape(label)}\s*\n?\s*(.+)", full_text)
+        return match.group(1).strip() if match else None
+
+    return {
+        "date": extract("Date:"),
+        "hospital": extract("Hospital:"),
+        "shift_type": extract("Shift Type:"),
+        "provider": extract("Current Provider:"),
+    }
+
+def attempt_auto_take(driver, shift):
+    """Re-locate a newly detected SG shift, click Take Shift, verify the
+    confirmation modal matches exactly, then Confirm or back out with Cancel.
+    Returns a status string describing what happened."""
+    logger.info(f"Attempting auto-take for SG shift: {shift}")
+    try:
+        driver.get(WEBSITE_URL)
+        time.sleep(2)
+        click_list_view(driver)
+
+        button = find_row_button_for_shift(driver, shift)
+        if button is None:
+            logger.warning("Could not re-locate this shift - it may already be taken")
+            return "not_found"
+
+        button_text = button.text.strip()
+        if button_text != "Take Shift":
+            logger.info(f"Shift not available to take (button says '{button_text}')")
+            return "unavailable"
+
+        safe_click(driver, button)
+
+        WebDriverWait(driver, 10).until(
+            EC.presence_of_element_located((By.XPATH, "//*[contains(text(), 'Confirm Take Shift')]"))
+        )
+        modal_details = read_modal_shift_details(driver)
+        logger.info(f"Confirmation modal shows: {modal_details}")
+
+        matches = (
+            modal_details.get("date") == shift["date"] and
+            modal_details.get("hospital") == shift["hospital"] and
+            modal_details.get("shift_type") == shift["shift_type"] and
+            modal_details.get("provider") == shift["provider"]
+        )
+
+        if matches:
+            confirm_button = driver.find_element(By.XPATH, "//button[normalize-space(.)='Confirm']")
+            safe_click(driver, confirm_button)
+            logger.info("Confirmed - shift taken")
+            return "taken"
+        else:
+            logger.error(f"Modal mismatch - expected {shift}, got {modal_details}. Cancelling.")
+            driver.save_screenshot("debug_screenshot.png")
+            with open("debug_page.html", "w", encoding="utf-8") as f:
+                f.write(driver.page_source)
+            try:
+                cancel_button = driver.find_element(By.XPATH, "//button[normalize-space(.)='Cancel']")
+                safe_click(driver, cancel_button)
+            except Exception:
+                pass
+            return "mismatch"
+
+    except Exception as e:
+        logger.error(f"Error during auto-take attempt: {e}")
+        try:
+            driver.save_screenshot("debug_screenshot.png")
+            with open("debug_page.html", "w", encoding="utf-8") as f:
+                f.write(driver.page_source)
+        except Exception:
+            pass
+        return "error"
+
 # ==================== MAIN (single run) ====================
 
 def run_check():
@@ -332,6 +446,28 @@ def run_check():
                     f"Provider: {shift['provider']}"
                 )
                 send_ntfy(title, body)
+
+            sg_new_shifts = [s for s in new_shifts if 'SG' in s['shift_type']]
+            if sg_new_shifts and not AUTO_TAKE_SG:
+                logger.info(f"AUTO_TAKE_SG is disabled - skipping auto-take for {len(sg_new_shifts)} SG shift(s)")
+            elif sg_new_shifts:
+                for shift in sg_new_shifts:
+                    result = attempt_auto_take(driver, shift)
+                    result_title = {
+                        "taken": f"Taken - {shift['shift_type']}",
+                        "unavailable": f"Not Available - {shift['shift_type']}",
+                        "mismatch": f"Verification Failed - {shift['shift_type']}",
+                        "not_found": f"Could Not Find Shift - {shift['shift_type']}",
+                        "error": f"Error Taking Shift - {shift['shift_type']}",
+                    }.get(result, f"Auto-Take Result - {shift['shift_type']}")
+                    result_body = {
+                        "taken": f"Successfully took the shift.\nDate: {shift['date']}\nHospital: {shift['hospital']}\nProvider: {shift['provider']}",
+                        "unavailable": f"Shift was no longer available to take.\nDate: {shift['date']}\nHospital: {shift['hospital']}",
+                        "mismatch": f"Found the shift but confirmation details didn't match - backed out without taking it. Check manually.\nDate: {shift['date']}\nHospital: {shift['hospital']}",
+                        "not_found": f"Could not find this shift again - it may already be taken.\nDate: {shift['date']}\nHospital: {shift['hospital']}",
+                        "error": f"An error occurred trying to take this shift. Check manually.\nDate: {shift['date']}\nHospital: {shift['hospital']}",
+                    }.get(result, str(result))
+                    send_ntfy(result_title, result_body)
         else:
             logger.info("No new shifts detected")
 
