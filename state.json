@@ -4,11 +4,5 @@
     "hospital": "Huntington Hospital",
     "shift_type": "Third",
     "provider": "Perera"
-  },
-  {
-    "date": "Wed, Oct 14, 2026",
-    "hospital": "Valley Presbyterian",
-    "shift_type": "VP2",
-    "provider": "Tayefeh"
   }
 ]
