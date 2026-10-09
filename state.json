@@ -6,6 +6,12 @@
     "provider": "Perera"
   },
   {
+    "date": "Wed, Dec 23, 2026",
+    "hospital": "Huntington Hospital",
+    "shift_type": "Third",
+    "provider": "Wang, J"
+  },
+  {
     "date": "Wed, Dec 30, 2026",
     "hospital": "Huntington Hospital",
     "shift_type": "Third",
