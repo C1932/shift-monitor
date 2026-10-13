@@ -10,11 +10,5 @@
     "hospital": "Huntington Hospital",
     "shift_type": "Second",
     "provider": "Ro, T"
-  },
-  {
-    "date": "Wed, Dec 30, 2026",
-    "hospital": "Huntington Hospital",
-    "shift_type": "Third",
-    "provider": "Yum"
   }
 ]
