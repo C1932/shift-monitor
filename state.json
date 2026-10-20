@@ -6,6 +6,12 @@
     "provider": "Perera"
   },
   {
+    "date": "Tue, Dec 22, 2026",
+    "hospital": "Valley Presbyterian",
+    "shift_type": "VP1",
+    "provider": "Sharifpour"
+  },
+  {
     "date": "Thu, Dec 24, 2026",
     "hospital": "Valley Presbyterian",
     "shift_type": "VP2",
