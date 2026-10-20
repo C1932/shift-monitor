@@ -6,6 +6,12 @@
     "provider": "Perera"
   },
   {
+    "date": "Thu, Dec 24, 2026",
+    "hospital": "Valley Presbyterian",
+    "shift_type": "VP2",
+    "provider": "Wu"
+  },
+  {
     "date": "Wed, Dec 30, 2026",
     "hospital": "Huntington Hospital",
     "shift_type": "Second",
