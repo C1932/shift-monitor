@@ -48,12 +48,6 @@
     "provider": "Guran"
   },
   {
-    "date": "Sat Oct 31 2026",
-    "hospital": "Huntington Hospital",
-    "shift_type": "Third",
-    "provider": "Pak"
-  },
-  {
     "date": "Sat Nov 7 2026",
     "hospital": "Valley Presbyterian",
     "shift_type": "VP1",
