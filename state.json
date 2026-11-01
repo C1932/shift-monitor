@@ -52,5 +52,11 @@
     "hospital": "Huntington Hospital",
     "shift_type": "Third",
     "provider": "Wang, R"
+  },
+  {
+    "date": "Sat Jan 9 2027",
+    "hospital": "Huntington Hospital",
+    "shift_type": "Third",
+    "provider": "Cammarano"
   }
 ]
