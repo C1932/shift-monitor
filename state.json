@@ -1,41 +1,5 @@
 [
   {
-    "date": "Sat Sep 5 2026",
-    "hospital": "Huntington Hospital",
-    "shift_type": "Third",
-    "provider": "Hernandez"
-  },
-  {
-    "date": "Mon Sep 7 2026",
-    "hospital": "Huntington Hospital",
-    "shift_type": "Third",
-    "provider": "Perera"
-  },
-  {
-    "date": "Sat Sep 12 2026",
-    "hospital": "Huntington Hospital",
-    "shift_type": "Third",
-    "provider": "Perera"
-  },
-  {
-    "date": "Sat Sep 19 2026",
-    "hospital": "Valley Presbyterian",
-    "shift_type": "VP1",
-    "provider": "Tsai, A"
-  },
-  {
-    "date": "Sun Sep 27 2026",
-    "hospital": "Valley Presbyterian",
-    "shift_type": "VP1",
-    "provider": "Chow"
-  },
-  {
-    "date": "Sun Sep 27 2026",
-    "hospital": "Huntington Hospital",
-    "shift_type": "Third",
-    "provider": "Cammarano"
-  },
-  {
     "date": "Sat Oct 17 2026",
     "hospital": "Valley Presbyterian",
     "shift_type": "VP1",
