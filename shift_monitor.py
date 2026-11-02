@@ -87,13 +87,19 @@ def wait_for_table_change(driver, previous_signature, timeout=10):
 
 # ==================== FILTER LOGIC ====================
 
+DAY_RE = re.compile(r'^\s*(Mon|Tue|Wed|Thu|Fri|Sat|Sun)', re.IGNORECASE)
+
+def normalize_date(date_string):
+    """'Mon, Sep 7, 2026' and 'Mon Sep 7 2026' -> 'Mon Sep 7 2026'"""
+    return re.sub(r'\s+', ' ', (date_string or '').replace(',', ' ')).strip()
+
 def is_weekday(date_string):
-    """date_string format: 'Mon, Sep 7, 2026' -> True if Mon-Fri"""
-    try:
-        day = date_string.split(',')[0].strip()
-        return day not in ['Sat', 'Sun']
-    except Exception:
+    """Works with or without commas. True ONLY if the day is positively Mon-Fri.
+    Anything unrecognized returns False (never alert on a date we can't read)."""
+    m = DAY_RE.match(date_string or '')
+    if not m:
         return False
+    return m.group(1).title() in ['Mon', 'Tue', 'Wed', 'Thu', 'Fri']
 
 def should_alert(shift_type, date_string):
     """
@@ -128,7 +134,7 @@ def save_shifts(shifts):
         json.dump(shifts, f, indent=2)
 
 def format_shift(shift):
-    return f"{shift['date']}|{shift['hospital']}|{shift['shift_type']}"
+    return f"{normalize_date(shift['date'])}|{shift['hospital']}|{shift['shift_type']}"
 
 # ==================== NOTIFICATIONS ====================
 
@@ -139,8 +145,8 @@ def get_calendar_events_for_date(shift_date_str):
     if not GCAL_ICAL_URL:
         return None
     try:
-        date_part = shift_date_str.split(",", 1)[1].strip()  # "Sep 7, 2026"
-        target_date = datetime.strptime(date_part, "%b %d, %Y").date()
+        date_part = normalize_date(shift_date_str).split(" ", 1)[1]  # "Sep 7 2026"
+        target_date = datetime.strptime(date_part, "%b %d %Y").date()
 
         response = requests.get(GCAL_ICAL_URL, timeout=15)
         response.raise_for_status()
@@ -427,7 +433,7 @@ def find_row_button_for_shift(driver, shift, max_pages=10):
             try:
                 cells = row.find_elements(By.TAG_NAME, "td")
                 if len(cells) >= 4:
-                    if (cells[0].text.strip() == shift['date'] and
+                    if (normalize_date(cells[0].text) == normalize_date(shift['date']) and
                             cells[1].text.strip() == shift['hospital'] and
                             cells[2].text.strip() == shift['shift_type'] and
                             cells[3].text.strip() == shift['provider']):
@@ -492,7 +498,7 @@ def attempt_auto_take(driver, shift):
         logger.info(f"Confirmation modal shows: {modal_details}")
 
         matches = (
-            modal_details.get("date") == shift["date"] and
+            normalize_date(modal_details.get("date")) == normalize_date(shift["date"]) and
             modal_details.get("hospital") == shift["hospital"] and
             modal_details.get("shift_type") == shift["shift_type"] and
             modal_details.get("provider") == shift["provider"]
